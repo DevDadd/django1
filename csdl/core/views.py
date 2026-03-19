@@ -146,7 +146,7 @@ def get_exam_detail(request):
     with connection.cursor() as cursor:
         cursor.execute(
             """
-            SELECT id, title, created_at
+            SELECT id, title, created_at, type
             FROM quizzes
             WHERE id = %s
             """,
@@ -161,6 +161,7 @@ def get_exam_detail(request):
             "id": quiz[0],
             "title": quiz[1],
             "created_at": quiz[2],
+            "type": quiz[3],
             "questions": []
         }
 
@@ -208,9 +209,10 @@ def get_exam_detail(request):
 @api_view(['POST'])
 def create_exam(request):
     title = request.data.get('title')
+    quiz_type = request.data.get('type')
     questions = request.data.get('questions')
 
-    if not title or not questions:
+    if not title or quiz_type in (None, '') or not questions:
         return Response({"error": "Missing fields"}, status=400)
 
     try:
@@ -219,11 +221,11 @@ def create_exam(request):
 
                 cursor.execute(
                     """
-                    INSERT INTO quizzes (title, created_at)
-                    VALUES (%s, NOW())
+                    INSERT INTO quizzes (title, created_at, type)
+                    VALUES (%s, NOW(), %s)
                     RETURNING id
                     """,
-                    [title]
+                    [title, quiz_type]
                 )
                 quiz_id = cursor.fetchone()[0]
 
@@ -278,6 +280,7 @@ def update_exam(request):
     if not id:
         return Response({"error": "Missing fields"}, status=400)
     title = request.data.get('title')
+    quiz_type = request.data.get('type')
     questions = request.data.get('questions')
 
     if not title or not questions:
@@ -294,14 +297,25 @@ def update_exam(request):
                 if not cursor.fetchone():
                     return Response({"error": "Quiz not found"}, status=404)
 
-                cursor.execute(
-                    """
-                    UPDATE quizzes
-                    SET title = %s
-                    WHERE id = %s
-                    """,
-                    [title, id]
-                )
+                # Update title always; update `type` only when client provides it.
+                if quiz_type in (None, ''):
+                    cursor.execute(
+                        """
+                        UPDATE quizzes
+                        SET title = %s
+                        WHERE id = %s
+                        """,
+                        [title, id],
+                    )
+                else:
+                    cursor.execute(
+                        """
+                        UPDATE quizzes
+                        SET title = %s, type = %s
+                        WHERE id = %s
+                        """,
+                        [title, quiz_type, id],
+                    )
 
                 cursor.execute(
                     """
