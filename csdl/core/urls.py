@@ -18,4 +18,5 @@ urlpatterns = [
     # Mới thêm
     path('attempts/',     views.get_all_attempts,   name='get_all_attempts'),
     path('search/',       views.search_by_msv,      name='search_by_msv'),
+    path('adduser/',      views.add_user,           name='add_user'),
 ]

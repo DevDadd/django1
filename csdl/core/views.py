@@ -406,3 +406,15 @@ def search_by_msv(request):
         }, status=200)
     except Exception as e:
         return Response({"error": str(e)}, status=500)
+
+@api_view(['GET'])
+def add_user(request):
+    id = request.GET.get('id')
+    name = request.GET.get('name')
+    username = request.GET.get('username')
+    pwd = request.GET.get('pwd')
+    if not all([id, name, username, pwd]):
+        return Response({"error": "Missing fields"}, status=400)
+    with connection.cursor() as cursor:
+        cursor.execute("INSERT INTO users (id, name, username, pwd) VALUES (%s, %s, %s, %s)", [id, name, username, pwd])
+    return Response({"message": "User added successfully"}, status=201)
