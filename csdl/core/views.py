@@ -407,7 +407,7 @@ def search_by_msv(request):
     except Exception as e:
         return Response({"error": str(e)}, status=500)
 
-@api_view(['GET'])
+@api_view(['POST'])
 def add_user(request):
     id = request.GET.get('id')
     name = request.GET.get('name')
