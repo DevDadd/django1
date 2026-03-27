@@ -316,10 +316,6 @@ def get_all_exams(request):
 
 @api_view(['GET'])
 def get_all_attempts(request):
-    """
-    Thống kê tất cả lượt làm bài.
-    total = số câu hỏi của đề thi đó (đếm từ quiz_questions)
-    """
     try:
         with connection.cursor() as cursor:
             cursor.execute("""
