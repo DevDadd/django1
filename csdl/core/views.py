@@ -2,7 +2,14 @@ from django.db import connection, transaction
 from .serializer import QuestionSerializer, UserSerializer
 from rest_framework.response import Response
 from rest_framework.decorators import api_view
-from django.contrib.auth.hashers import make_password
+import bcrypt
+import jwt
+import datetime
+
+# ── JWT config (phải khớp với django2) ──────────────────
+JWT_SECRET = 'jwt-secret-nguyen-quang-anh-2024'
+JWT_ALGORITHM = 'HS256'
+JWT_EXP_HOURS = 24
 
 @api_view(['GET'])
 def get_questions(request):
@@ -15,35 +22,60 @@ def get_questions(request):
 
 @api_view(['POST'])
 def signup(request):
-    id = request.GET.get('id')
-    name = request.GET.get('name')
-    username = request.GET.get('username')
-    pwd = request.GET.get('pwd')
-    if not all([name, username, pwd]):
+    id       = request.data.get('id')
+    name     = request.data.get('name')
+    username = request.data.get('username')
+    pwd      = request.data.get('pwd')
+    if not all([id, name, username, pwd]):
         return Response({"error": "Missing fields"}, status=400)
-    with connection.cursor() as cursor:
-        cursor.execute(
-            "INSERT INTO users (id, name, username, pwd) VALUES (%s, %s, %s, %s)",
-            [id, name, username, pwd]
-        )
-    return Response({"message": "User created successfully"}, status=201)
+    # Hash password bằng bcrypt
+    hashed = bcrypt.hashpw(pwd.encode(), bcrypt.gensalt()).decode()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO users (id, name, username, pwd, role) VALUES (%s, %s, %s, %s, 'student')",
+                [id, name, username, hashed]
+            )
+        return Response({"message": "User created successfully"}, status=201)
+    except Exception as e:
+        if 'unique' in str(e).lower():
+            return Response({"error": "Username đã tồn tại"}, status=409)
+        return Response({"error": str(e)}, status=500)
 
-@api_view(['GET'])
+@api_view(['POST'])
 def login(request):
-    username = request.GET.get('username')
-    pwd = request.GET.get('pwd')
+    username = request.data.get('username')
+    pwd      = request.data.get('pwd')
     if not all([username, pwd]):
         return Response({"error": "Missing fields"}, status=400)
     with connection.cursor() as cursor:
         cursor.execute(
-            "SELECT id, name, username, pwd FROM users WHERE username = %s AND pwd = %s",
-            [username, pwd]
+            "SELECT id, name, username, pwd, role FROM users WHERE username = %s",
+            [username]
         )
         row = cursor.fetchone()
-        if row:
-            return Response({"message": "Login successful"}, status=200)
-        else:
-            return Response({"error": "Invalid username or password"}, status=401)
+    if not row:
+        return Response({"error": "Invalid username or password"}, status=401)
+    # Check bcrypt
+    if not bcrypt.checkpw(pwd.encode(), row[3].encode()):
+        return Response({"error": "Invalid username or password"}, status=401)
+    # Tạo JWT token
+    payload = {
+        'user_id': row[0],
+        'role':    row[4],
+        'exp':     datetime.datetime.utcnow() + datetime.timedelta(hours=JWT_EXP_HOURS),
+    }
+    token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    return Response({
+        "message":      "Login successful",
+        "access_token": token,
+        "user": {
+            "id":       row[0],
+            "name":     row[1],
+            "username": row[2],
+            "role":     row[4],
+        }
+    }, status=200)
 
 @api_view(['GET'])
 def get_all_users(request):
@@ -82,7 +114,7 @@ def update_user(request):
     with connection.cursor() as cursor:
         cursor.execute(
             "UPDATE users SET name = %s, username = %s, pwd = %s WHERE id = %s",
-            [name, username, make_password(pwd), id]
+            [name, username, bcrypt.hashpw(pwd.encode(), bcrypt.gensalt()).decode(), id]
         )
     return Response({"message": "User updated successfully"}, status=200)
 
@@ -352,15 +384,11 @@ def get_all_attempts(request):
 
 @api_view(['GET'])
 def search_by_msv(request):
-    """
-    Tra cứu sinh viên theo MSV, trả về thông tin + lịch sử làm bài.
-    """
     msv = request.GET.get('msv', '').strip()
     if not msv:
         return Response({"error": "Missing msv"}, status=400)
     try:
         with connection.cursor() as cursor:
-            # Thông tin sinh viên
             cursor.execute(
                 "SELECT id, name, username FROM users WHERE id = %s", [msv]
             )
@@ -368,7 +396,6 @@ def search_by_msv(request):
             if not user_row:
                 return Response({"error": "Không tìm thấy sinh viên với MSV này"}, status=404)
 
-            # Lịch sử làm bài + tính total từ quiz_questions
             cursor.execute("""
                 SELECT
                     qz.title,
@@ -405,12 +432,16 @@ def search_by_msv(request):
 
 @api_view(['POST'])
 def add_user(request):
-    id = request.GET.get('id')
-    name = request.GET.get('name')
-    username = request.GET.get('username')
-    pwd = request.GET.get('pwd')
+    id       = request.data.get('id')
+    name     = request.data.get('name')
+    username = request.data.get('username')
+    pwd      = request.data.get('pwd')
     if not all([id, name, username, pwd]):
         return Response({"error": "Missing fields"}, status=400)
+    hashed = bcrypt.hashpw(pwd.encode(), bcrypt.gensalt()).decode()
     with connection.cursor() as cursor:
-        cursor.execute("INSERT INTO users (id, name, username, pwd) VALUES (%s, %s, %s, %s)", [id, name, username, pwd])
+        cursor.execute(
+            "INSERT INTO users (id, name, username, pwd, role) VALUES (%s, %s, %s, %s, 'student')",
+            [id, name, username, hashed]
+        )
     return Response({"message": "User added successfully"}, status=201)
